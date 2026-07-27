@@ -1,11 +1,8 @@
 # 生产环境 Docker Compose 配置
-version: '3.8'
-
 services:
   nodeseeker:
-    build: 
-      context: .
-      dockerfile: Dockerfile
+    image: wyatt323/nodeseeker:latest
+    pull_policy: always
     container_name: nodeseeker-app-prod
     restart: unless-stopped
     ports:

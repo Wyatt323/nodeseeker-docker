@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   nodeseeker:
-    build: .
+    image: wyatt323/nodeseeker:latest
+    pull_policy: always
     container_name: nodeseeker-app
     restart: unless-stopped
     ports:

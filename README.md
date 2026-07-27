@@ -36,18 +36,21 @@ docker run -d \
 
 ### Docker Compose
 
+`docker-compose.yml` 和 `docker-compose.prod.yml` 默认直接拉取已由 GitHub Actions 构建的多架构镜像 `wyatt323/nodeseeker:latest`，不会在部署服务器上本地构建。
+
 ```bash
-git clone https://github.com/ljnchn/NodeSeeker-docker.git
-cd NodeSeeker-docker
+git clone https://github.com/Wyatt323/nodeseeker-docker.git
+cd nodeseeker-docker
 
 # （可选）配置环境变量
 cp .env.example .env
 
-# 启动
-docker-compose up -d
+# 拉取最新镜像并启动
+docker compose pull
+docker compose up -d
 ```
 
-> 生产环境请使用 `docker-compose -f docker-compose.prod.yml up -d`，详见 [Docker 部署文档](docs/Docker.md)。
+> 生产环境请使用 `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`，详见 [Docker 部署文档](docs/Docker.md)。
 
 ### 本地开发
 
