@@ -14,10 +14,8 @@ services:
       - RSS_URL=${RSS_URL:-https://rss.nodeseek.com/}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3010}
     volumes:
-      # 持久化数据库文件
-      - nodeseeker_data:/usr/src/app/data
-      # 日志目录
-      - nodeseeker_logs:/usr/src/app/logs
+      # 数据库持久化到 Compose 文件所在目录的 data/
+      - ./data:/usr/src/app/data
       # 环境变量文件（可选）
       # - ./.env:/usr/src/app/.env:ro
     networks:
@@ -33,12 +31,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  nodeseeker_data:
-    driver: local
-  nodeseeker_logs:
-    driver: local
 
 networks:
   nodeseeker_network:

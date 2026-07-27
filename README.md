@@ -46,9 +46,12 @@ cd nodeseeker-docker
 cp .env.example .env
 
 # 拉取最新镜像并启动
+mkdir -p data
 docker compose pull
 docker compose up -d
 ```
+
+数据库会持久化到当前项目目录的 `./data/nodeseeker.db`，删除或更新容器不会丢失数据。备份时直接备份 `data/` 目录即可。
 
 > 生产环境请使用 `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`，详见 [Docker 部署文档](docs/Docker.md)。
 

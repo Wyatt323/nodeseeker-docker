@@ -91,9 +91,8 @@ logs
 *.log
 
 # Runtime data
-data/
-data/*
-!data/.gitkeep
+/data/*
+!/data/.gitkeep
 
 # Build output
 dist/

@@ -18,8 +18,8 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-https://your-domain.com}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
-      - nodeseeker_data:/usr/src/app/data
-      - nodeseeker_logs:/usr/src/app/logs
+      # 数据库持久化到 Compose 文件所在目录的 data/
+      - ./data:/usr/src/app/data
     networks:
       - nodeseeker_network
     healthcheck:
@@ -76,22 +76,6 @@ services:
   #     - prometheus_data:/prometheus
   #   networks:
   #     - nodeseeker_network
-
-volumes:
-  nodeseeker_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/nodeseeker/data  # 生产环境数据目录
-  nodeseeker_logs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/nodeseeker/logs  # 生产环境日志目录
-  # prometheus_data:
-  #   driver: local
 
 networks:
   nodeseeker_network:
