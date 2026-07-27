@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { createDatabaseConnection } from '../config/database';
-import type { BaseConfig, Post, KeywordSub } from '../types';
+import type { BaseConfig, Post, KeywordSub, TelegramAccount, PostDelivery } from '../types';
 import { logger } from '../utils/logger';
 
 export class DatabaseService {
@@ -166,6 +166,10 @@ export class DatabaseService {
     if (config.telegram_mode !== undefined) {
       updates.push('telegram_mode = ?');
       values.push(config.telegram_mode);
+    }
+    if (config.allowed_tg_ids !== undefined) {
+      updates.push('allowed_tg_ids = ?');
+      values.push(config.allowed_tg_ids);
     }
 
     if (updates.length === 0) {
@@ -478,12 +482,13 @@ export class DatabaseService {
   // 关键词订阅相关操作
   createKeywordSub(sub: Omit<KeywordSub, 'id' | 'created_at' | 'updated_at'>): KeywordSub {
     const stmt = this.db.query(`
-      INSERT INTO keywords_sub (keyword1, keyword2, keyword3, creator, category)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO keywords_sub (owner_chat_id, keyword1, keyword2, keyword3, creator, category)
+      VALUES (?, ?, ?, ?, ?, ?)
       RETURNING *
     `);
 
     const result = stmt.get(
+      sub.owner_chat_id || null,
       sub.keyword1 || null,
       sub.keyword2 || null,
       sub.keyword3 || null,
@@ -511,9 +516,20 @@ export class DatabaseService {
     return subscriptions;
   }
 
-  deleteKeywordSub(id: number): boolean {
-    const stmt = this.db.query('DELETE FROM keywords_sub WHERE id = ?');
-    const result = stmt.run(id);
+  getKeywordSubsByOwner(ownerChatId: string): KeywordSub[] {
+    const stmt = this.db.query(`
+      SELECT * FROM keywords_sub
+      WHERE owner_chat_id = ?
+      ORDER BY created_at DESC
+    `);
+    return stmt.all(ownerChatId) as KeywordSub[];
+  }
+
+  deleteKeywordSub(id: number, ownerChatId?: string): boolean {
+    const stmt = ownerChatId
+      ? this.db.query('DELETE FROM keywords_sub WHERE id = ? AND owner_chat_id = ?')
+      : this.db.query('DELETE FROM keywords_sub WHERE id = ?');
+    const result = ownerChatId ? stmt.run(id, ownerChatId) : stmt.run(id);
     
     // 清理相关缓存
     this.clearCacheByPattern('KeywordSubs');
@@ -526,6 +542,10 @@ export class DatabaseService {
     const updates: string[] = [];
     const values: any[] = [];
 
+    if (sub.owner_chat_id !== undefined) {
+      updates.push('owner_chat_id = ?');
+      values.push(sub.owner_chat_id || null);
+    }
     if (sub.keyword1 !== undefined) {
       updates.push('keyword1 = ?');
       values.push(sub.keyword1 || null);
@@ -564,9 +584,150 @@ export class DatabaseService {
     return stmt.get(...values) as KeywordSub | null;
   }
 
-  getKeywordSubById(id: number): KeywordSub | null {
-    const stmt = this.db.query('SELECT * FROM keywords_sub WHERE id = ?');
-    return stmt.get(id) as KeywordSub | null;
+  getKeywordSubById(id: number, ownerChatId?: string): KeywordSub | null {
+    const stmt = ownerChatId
+      ? this.db.query('SELECT * FROM keywords_sub WHERE id = ? AND owner_chat_id = ?')
+      : this.db.query('SELECT * FROM keywords_sub WHERE id = ?');
+    return (ownerChatId ? stmt.get(id, ownerChatId) : stmt.get(id)) as KeywordSub | null;
+  }
+
+  getAllowedTelegramIds(): string[] {
+    const config = this.getBaseConfig();
+    const configured = config?.allowed_tg_ids || config?.chat_id || '';
+    return [...new Set(configured.split(/[\s,;]+/).map(id => id.trim()).filter(id => /^-?\d+$/.test(id)))];
+  }
+
+  isTelegramIdAllowed(chatId: string): boolean {
+    return this.getAllowedTelegramIds().includes(chatId);
+  }
+
+  syncTelegramUsersFromWhitelist(): void {
+    const allowedIds = this.getAllowedTelegramIds();
+    this.db.query(`
+      UPDATE telegram_users SET enabled = 0, updated_at = CURRENT_TIMESTAMP
+    `).run();
+    for (const chatId of allowedIds) {
+      this.upsertTelegramUser({ chat_id: chatId, enabled: 1 });
+    }
+  }
+
+  upsertTelegramUser(account: Pick<TelegramAccount, 'chat_id'> & Partial<TelegramAccount>): TelegramAccount {
+    return this.db.query(`
+      INSERT INTO telegram_users (chat_id, user_name, username, enabled, stop_push)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(chat_id) DO UPDATE SET
+        user_name = excluded.user_name,
+        username = excluded.username,
+        enabled = excluded.enabled,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `).get(
+      account.chat_id,
+      account.user_name || null,
+      account.username || null,
+      account.enabled ?? 1,
+      account.stop_push ?? 0,
+    ) as TelegramAccount;
+  }
+
+  getTelegramUser(chatId: string): TelegramAccount | null {
+    return this.db.query('SELECT * FROM telegram_users WHERE chat_id = ?').get(chatId) as TelegramAccount | null;
+  }
+
+  getTelegramUsers(): TelegramAccount[] {
+    return this.db.query(`
+      SELECT * FROM telegram_users WHERE enabled = 1 ORDER BY created_at ASC
+    `).all() as TelegramAccount[];
+  }
+
+  setTelegramUserPushStopped(chatId: string, stopped: boolean): boolean {
+    const result = this.db.query(`
+      UPDATE telegram_users SET stop_push = ?, updated_at = CURRENT_TIMESTAMP WHERE chat_id = ?
+    `).run(stopped ? 1 : 0, chatId);
+    return result.changes > 0;
+  }
+
+  removeTelegramUser(chatId: string): boolean {
+    const result = this.db.query('DELETE FROM telegram_users WHERE chat_id = ?').run(chatId);
+    return result.changes > 0;
+  }
+
+  createPostDelivery(postId: number, chatId: string, subId: number): PostDelivery | null {
+    this.db.query(`
+      INSERT OR IGNORE INTO post_deliveries (post_id, chat_id, sub_id, status, attempts)
+      VALUES (?, ?, ?, 0, 0)
+    `).run(postId, chatId, subId);
+    return this.getPostDelivery(postId, chatId, subId);
+  }
+
+  getPostDelivery(postId: number, chatId: string, subId?: number): PostDelivery | null {
+    const stmt = subId === undefined
+      ? this.db.query(`SELECT * FROM post_deliveries WHERE post_id = ? AND chat_id = ? ORDER BY id DESC LIMIT 1`)
+      : this.db.query(`SELECT * FROM post_deliveries WHERE post_id = ? AND chat_id = ? AND sub_id = ?`);
+    return (subId === undefined ? stmt.get(postId, chatId) : stmt.get(postId, chatId, subId)) as PostDelivery | null;
+  }
+
+  getPendingPostDeliveries(): Array<PostDelivery & { post: Post; subscription: KeywordSub; account: TelegramAccount }> {
+    const rows = this.db.query(`
+      SELECT
+        pd.*,
+        json_object(
+          'id', p.id, 'post_id', p.post_id, 'title', p.title, 'memo', p.memo,
+          'category', p.category, 'creator', p.creator, 'push_status', p.push_status,
+          'sub_id', p.sub_id, 'pub_date', p.pub_date, 'push_date', p.push_date,
+          'created_at', p.created_at
+        ) AS post_json,
+        json_object(
+          'id', ks.id, 'owner_chat_id', ks.owner_chat_id, 'keyword1', ks.keyword1,
+          'keyword2', ks.keyword2, 'keyword3', ks.keyword3, 'creator', ks.creator,
+          'category', ks.category, 'created_at', ks.created_at, 'updated_at', ks.updated_at
+        ) AS subscription_json,
+        json_object(
+          'chat_id', tu.chat_id, 'user_name', tu.user_name, 'username', tu.username,
+          'enabled', tu.enabled, 'stop_push', tu.stop_push,
+          'created_at', tu.created_at, 'updated_at', tu.updated_at
+        ) AS account_json
+      FROM post_deliveries pd
+      JOIN posts p ON p.post_id = pd.post_id
+      JOIN keywords_sub ks ON ks.id = pd.sub_id
+      JOIN telegram_users tu ON tu.chat_id = pd.chat_id
+      WHERE pd.status IN (0, 2) AND pd.attempts < 5
+        AND tu.enabled = 1 AND tu.stop_push = 0
+      ORDER BY pd.created_at ASC
+    `).all() as Array<any>;
+
+    return rows.map(row => ({
+      ...row,
+      post: JSON.parse(row.post_json),
+      subscription: JSON.parse(row.subscription_json),
+      account: JSON.parse(row.account_json),
+    }));
+  }
+
+  updatePostDelivery(postId: number, chatId: string, subId: number, success: boolean, error?: string): void {
+    this.db.query(`
+      UPDATE post_deliveries
+      SET status = ?, last_error = ?, attempts = attempts + 1,
+          pushed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE pushed_at END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE post_id = ? AND chat_id = ? AND sub_id = ?
+    `).run(success ? 1 : 2, success ? null : (error || '推送失败'), success ? 1 : 0, postId, chatId, subId);
+  }
+
+  syncPostPushStatusFromDeliveries(postId: number): void {
+    const summary = this.db.query(`
+      SELECT COUNT(*) AS total,
+             COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS succeeded
+      FROM post_deliveries WHERE post_id = ?
+    `).get(postId) as { total: number; succeeded: number };
+    if (summary.total > 0) {
+      this.updatePostPushStatus(
+        postId,
+        summary.succeeded === summary.total ? 3 : 1,
+        undefined,
+        summary.succeeded === summary.total ? new Date().toISOString() : undefined,
+      );
+    }
   }
 
   // 数据库初始化检查：只要用户存在即视为已初始化

@@ -16,8 +16,8 @@ async function main() {
         const dbService = DatabaseService.create();
         schedulerService = new SchedulerService(dbService);
 
-        // 启动定时任务
-        schedulerService.start();
+        // 启动定时任务和已配置的 Telegram Polling
+        await schedulerService.start();
 
         // 启动 Bun 服务器
         const server = Bun.serve({

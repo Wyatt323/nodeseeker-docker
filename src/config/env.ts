@@ -22,6 +22,7 @@ const envSchema = z.object({
 
   // Telegram (Optional)
   TELEGRAM_WEBHOOK_URL: z.string().url().optional(),
+  TELEGRAM_WEBHOOK_SECRET: z.string().min(16).max(256).regex(/^[A-Za-z0-9_-]+$/).optional(),
 
   // CORS
   CORS_ORIGINS: z.string().default("http://localhost:3010"),

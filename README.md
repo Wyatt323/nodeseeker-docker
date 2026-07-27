@@ -13,7 +13,8 @@
 |------|------|
 | 🔄 自动 RSS 抓取 | 定时抓取 NodeSeek 社区 RSS，支持自定义间隔与代理 |
 | 🎯 智能关键词匹配 | 多关键词组合 + 正则表达式，按创建者/分类过滤 |
-| 📱 Telegram 推送 | Bot 实时推送匹配文章，支持命令管理订阅 |
+| 📱 Telegram 多用户推送 | 白名单内每位用户独立关键词、暂停状态、失败重试与单独推送 |
+| 🤖 Bot 关键词管理 | 用户可通过 `/add`、`/list`、`/del` 管理自己的关键词 |
 | 🌐 Web 控制台 | RESTful API + 可视化管理界面 |
 | 🔐 安全认证 | JWT 认证 + 密码加密存储 |
 | 📊 实时统计 | 推送统计与系统监控 |
@@ -91,9 +92,13 @@ bun test             # 运行测试
 ## 🔧 初始化配置
 
 1. 访问 http://localhost:3010，创建管理员账户
-2. **配置 Telegram Bot**（可选）：
+2. **配置 Telegram Bot 与用户白名单**（可选）：
    - 在 Telegram 中通过 [@BotFather](https://t.me/BotFather) 创建 Bot 并获取 Token
-   - 在控制台配置 Bot Token，向 Bot 发送 `/start` 完成绑定
+   - 控制台 → Telegram：填写 Bot Token
+   - 在“允许使用 Bot 的 Telegram ID”中填写多个 ID（逗号、空格或换行分隔）
+   - 推荐选择 **Polling**，不需要公网 HTTPS 域名；服务重启后会自动恢复 Polling
+   - 使用 Webhook 时，建议在 `.env` 设置 `TELEGRAM_WEBHOOK_SECRET`，系统会校验 Telegram secret token
+   - 每位白名单用户私聊 Bot 发送 `/start`，之后只能看到和修改自己的关键词
 3. **配置 RSS 源**（可选）：
    - 控制台 → 基础设置 → RSS 抓取设置
    - 可修改源地址、间隔、代理，支持 **测试连接**
@@ -102,12 +107,13 @@ bun test             # 运行测试
 
 | 命令 | 说明 |
 |------|------|
-| `/start` | 绑定账户 |
-| `/list` | 查看订阅列表 |
-| `/add 关键词1 关键词2` | 添加订阅（最多 3 个关键词） |
-| `/del 订阅ID` | 删除订阅 |
+| `/start` | 白名单用户启用自己的独立订阅空间 |
+| `/getme` | 查看自己的 Telegram ID 和授权状态 |
+| `/list` | 只查看自己的订阅列表 |
+| `/add 关键词1 关键词2` | 添加到自己的订阅（最多 3 个关键词） |
+| `/del 订阅ID` | 只能删除自己的订阅 |
 | `/post` | 查看最近文章 |
-| `/stop` / `/resume` | 停止 / 恢复推送 |
+| `/stop` / `/resume` | 只暂停 / 恢复自己的推送 |
 
 <details>
 <summary>关键词匹配格式</summary>
@@ -127,6 +133,19 @@ bun test             # 运行测试
 ```
 
 </details>
+
+## 🐳 GitHub Actions 发布到 Docker Hub
+
+仓库已包含 `.github/workflows/docker-build.yml`：Pull Request 会执行测试和构建；推送到 `main` 或 `v*` 标签时，会构建 `linux/amd64` 与 `linux/arm64` 镜像并推送 Docker Hub。
+
+在 GitHub 仓库 **Settings → Secrets and variables → Actions** 添加：
+
+| Secret | 值 |
+|---|---|
+| `DOCKERHUB_USERNAME` | Docker Hub 用户名 |
+| `DOCKERHUB_TOKEN` | Docker Hub 的 Access Token（不要使用账号密码） |
+
+默认镜像名是 `<DOCKERHUB_USERNAME>/nodeseeker`。`main` 会发布 `latest` 和 `sha-*`；`v1.2.3` 标签还会发布 `v1.2.3`、`1.2.3`、`1.2`。
 
 ## 📁 项目结构
 

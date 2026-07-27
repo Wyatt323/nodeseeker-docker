@@ -4,14 +4,20 @@ import { TelegramPushService } from '../services/telegram/push';
 import { createSuccessResponse, createErrorResponse } from '../utils/helpers';
 import type { ContextVariables } from '../types';
 import { logger } from '../utils/logger';
+import { adminSessionMiddleware } from '../middleware/adminSession';
+import { getEnvConfig } from '../config/env';
 
 type Variables = ContextVariables;
 
 export const telegramRoutes = new Hono<{ Variables: Variables }>();
 
-// Telegram Webhook 处理
+// Telegram Webhook 处理（必须公开，Telegram 才能投递 Update）
 telegramRoutes.post('/webhook', async (c) => {
   try {
+    const webhookSecret = getEnvConfig().TELEGRAM_WEBHOOK_SECRET;
+    if (webhookSecret && c.req.header('x-telegram-bot-api-secret-token') !== webhookSecret) {
+      return c.json(createErrorResponse('Webhook secret 无效'), 401);
+    }
     const dbService = c.get('dbService');
     const config = dbService.getBaseConfig();
     
@@ -33,6 +39,9 @@ telegramRoutes.post('/webhook', async (c) => {
   }
 });
 
+// 其余 Telegram 管理接口必须由网页管理员登录后调用
+telegramRoutes.use('*', adminSessionMiddleware);
+
 // 设置 Webhook URL
 telegramRoutes.post('/set-webhook', async (c) => {
   try {
@@ -51,7 +60,7 @@ telegramRoutes.post('/set-webhook', async (c) => {
     }
     
     const telegramService = new TelegramWebhookService(dbService, config.bot_token);
-    const success = await telegramService.setWebhook(webhookUrl);
+    const success = await telegramService.setWebhook(webhookUrl, getEnvConfig().TELEGRAM_WEBHOOK_SECRET);
     
     if (success) {
       return c.json(createSuccessResponse(null, 'Webhook 设置成功'));

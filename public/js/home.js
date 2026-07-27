@@ -855,7 +855,9 @@ document.addEventListener("DOMContentLoaded", function () {
   async function loadTelegramConfig() {
     const result = await apiRequest("/api/config");
     if (result?.success) {
-      document.getElementById("botToken").value = result.data.bot_token || "";
+      document.getElementById("botToken").value = "";
+      document.getElementById("botToken").placeholder = result.data.has_bot_token ? "已配置（留空表示不修改）" : "从 @BotFather 获取";
+      document.getElementById("allowedTgIds").value = result.data.allowed_tg_ids || result.data.chat_id || "";
       document.getElementById("chatId").value = result.data.chat_id || "";
       document.getElementById("stopPush").checked = result.data.stop_push === 1;
       document.getElementById("onlyTitle").checked = result.data.only_title === 1;
@@ -933,12 +935,14 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("telegramConfigForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
 
+      const botToken = document.getElementById("botToken").value.trim();
       const data = {
-        bot_token: document.getElementById("botToken").value.trim(),
+        allowed_tg_ids: document.getElementById("allowedTgIds").value.trim(),
         chat_id: document.getElementById("chatId").value.trim(),
         stop_push: document.getElementById("stopPush").checked ? 1 : 0,
         only_title: document.getElementById("onlyTitle").checked ? 1 : 0,
       };
+      if (botToken) data.bot_token = botToken;
 
       const result = await apiRequest("/api/config", {
         method: "PUT",
@@ -1129,6 +1133,7 @@ document.addEventListener("DOMContentLoaded", function () {
             .join("")}
         </div>
         <div class="subscription-filters">
+          ${sub.owner_chat_id ? `<span class="tag">🆔 ${escapeHtml(sub.owner_chat_id)}</span>` : `<span class="tag">⚠️ 未分配用户</span>`}
           ${sub.creator ? `<span class="tag">👤 ${escapeHtml(sub.creator)}</span>` : ""}
           ${sub.category ? `<span class="tag">📂 ${getCategoryName(sub.category)}</span>` : ""}
         </div>
@@ -1163,6 +1168,7 @@ document.addEventListener("DOMContentLoaded", function () {
       e.preventDefault();
 
       const data = {
+        owner_chat_id: document.getElementById("ownerChatId").value.trim(),
         keyword1: document.getElementById("keyword1").value.trim() || undefined,
         keyword2: document.getElementById("keyword2").value.trim() || undefined,
         keyword3: document.getElementById("keyword3").value.trim() || undefined,
