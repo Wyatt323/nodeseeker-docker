@@ -9,6 +9,7 @@ export class SchedulerService {
     private rssIntervalId?: NodeJS.Timeout;
     private dbService: DatabaseService;
     private isRunning: boolean = false;
+    private telegramPollingService: import('./telegram/webhook').TelegramWebhookService | null = null;
 
     constructor(dbService: DatabaseService) {
         this.dbService = dbService;
@@ -26,13 +27,25 @@ export class SchedulerService {
     /**
      * 启动所有定时任务
      */
-    start(): void {
+    async start(): Promise<void> {
         const envConfig = getEnvConfig();
 
         logger.scheduler('启动定时任务服务');
 
         if (envConfig.RSS_CHECK_ENABLED) {
             this.startRSSTask();
+        }
+
+        const config = this.dbService.getBaseConfig();
+        if (config?.telegram_mode === 'polling' && config.bot_token) {
+            try {
+                const { TelegramWebhookService } = await import('./telegram/webhook');
+                this.telegramPollingService = new TelegramWebhookService(this.dbService, config.bot_token);
+                const result = await this.telegramPollingService.startPolling();
+                if (!result.success) logger.warn(`Telegram Polling 自动启动失败: ${result.error}`);
+            } catch (error) {
+                logger.warn('Telegram Polling 自动启动失败:', error);
+            }
         }
 
         logger.success('定时任务服务启动完成');
@@ -47,6 +60,10 @@ export class SchedulerService {
         if (this.rssIntervalId) {
             clearInterval(this.rssIntervalId);
             this.rssIntervalId = undefined;
+        }
+        if (this.telegramPollingService) {
+            void this.telegramPollingService.stopPolling();
+            this.telegramPollingService = null;
         }
         this.isRunning = false;
 
@@ -91,21 +108,19 @@ export class SchedulerService {
                 logger.task.info(`新增文章: ${rssResult.new} 篇`);
             }
 
-            // 2. 匹配和推送
-            const unpushedCount = this.dbService.getPostsCountByStatus(0);
-            if (unpushedCount > 0) {
-                let telegramService: TelegramPushService | null = null;
-                if (config.bot_token) {
-                    try {
-                        telegramService = new TelegramPushService(this.dbService, config.bot_token);
-                    } catch (e) {
-                        logger.warn('Telegram 服务初始化失败，仅执行匹配');
-                    }
+            // 2. 匹配新文章，并重试每个用户尚未成功的独立推送
+            let telegramService: TelegramPushService | null = null;
+            if (config.bot_token) {
+                try {
+                    telegramService = new TelegramPushService(this.dbService, config.bot_token);
+                } catch (e) {
+                    logger.warn('Telegram 服务初始化失败，仅执行匹配');
                 }
-                const matcherService = new MatcherService(this.dbService, telegramService);
-
-                const pushResult = await matcherService.processUnpushedPosts();
-                logger.task.info(`匹配: ${pushResult.pushed} | 未匹配: ${pushResult.skipped} | 失败: ${pushResult.failed}`);
+            }
+            const matcherService = new MatcherService(this.dbService, telegramService);
+            const pushResult = await matcherService.processUnpushedPosts();
+            if (pushResult.pushed > 0 || pushResult.skipped > 0 || pushResult.failed > 0) {
+                logger.task.info(`推送成功: ${pushResult.pushed} | 未匹配: ${pushResult.skipped} | 失败: ${pushResult.failed}`);
             }
 
             const duration = Date.now() - startTime;

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { AuthService } from '../services/auth'
 import { DatabaseService } from '../services/database'
+import { adminSessionMiddleware } from '../middleware/adminSession'
 
 type Bindings = {
   ENVIRONMENT: string
@@ -210,11 +211,12 @@ authRoutes.post('/logout', async (c) => {
   }
 })
 
-// 登出所有设备
-authRoutes.post('/logout-all', async (c) => {
+// 登出所有设备（需要当前管理员 Session）
+authRoutes.post('/logout-all', adminSessionMiddleware, async (c) => {
   try {
     const authService = c.get('authService')
-    const result = await authService.logoutAllDevices()
+    const sessionData = c.get('sessionData') as any
+    const result = await authService.logoutAllDevices(sessionData.userId)
     
     return c.json(result)
   } catch (error) {
@@ -225,11 +227,12 @@ authRoutes.post('/logout-all', async (c) => {
   }
 })
 
-// 获取活跃session列表
-authRoutes.get('/sessions', async (c) => {
+// 获取活跃 Session 列表（不返回可用于登录的 sessionId）
+authRoutes.get('/sessions', adminSessionMiddleware, async (c) => {
   try {
     const authService = c.get('authService')
-    const sessions = authService.getUserSessions()
+    const sessionData = c.get('sessionData') as any
+    const sessions = authService.getUserSessions(sessionData.userId).map(({ sessionId, ...safe }) => safe)
     
     return c.json({
       success: true,

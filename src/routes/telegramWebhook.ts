@@ -5,10 +5,13 @@ import { createValidationMiddleware } from '../utils/validation';
 import { createSuccessResponse, createErrorResponse } from '../utils/helpers';
 import type { ContextVariables } from '../types';
 import { logger } from '../utils/logger';
+import { adminSessionMiddleware } from '../middleware/adminSession';
+import { getEnvConfig } from '../config/env';
 
 type Variables = ContextVariables;
 
 export const telegramWebhookRoutes = new Hono<{ Variables: Variables }>();
+telegramWebhookRoutes.use('*', adminSessionMiddleware);
 
 // 验证 schemas
 const setupWebhookSchema = z.object({
@@ -183,7 +186,7 @@ telegramWebhookRoutes.post('/setup', createValidationMiddleware(setupWebhookSche
       finalWebhookUrl = `${url.protocol}//${url.host}/telegram/webhook`;
     }
     
-    const webhookResult = await telegramService.setWebhook(finalWebhookUrl);
+    const webhookResult = await telegramService.setWebhook(finalWebhookUrl, getEnvConfig().TELEGRAM_WEBHOOK_SECRET);
     
     if (webhookResult.success) {
       return c.json(createSuccessResponse({

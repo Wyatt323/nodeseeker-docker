@@ -200,6 +200,9 @@ export const HomePage: FC = () => {
         <div class="drawer-content">
           {/* 添加订阅表单 */}
           <form id="addSubForm" class="sub-form">
+            <div class="sub-form-row">
+              <input type="text" id="ownerChatId" class="input-field" placeholder="Telegram ID（必填，决定该订阅推送给谁）" required />
+            </div>
             {/* 第一行：关键词 */}
             <div class="sub-form-row">
               <div class="sub-keywords-inputs">
@@ -312,6 +315,11 @@ export const HomePage: FC = () => {
           <div class="form-card">
             <h4 class="form-section-title">🚀 推送服务配置</h4>
             <form id="telegramConfigForm" class="form-stack">
+              <div class="form-group">
+                <label for="allowedTgIds" class="form-label">允许使用 Bot 的 Telegram ID</label>
+                <textarea id="allowedTgIds" class="input-field" rows={3} placeholder="每行一个，或用逗号分隔，例如：123456789, 987654321"></textarea>
+                <span class="form-hint">只有这里列出的用户能 /start、管理自己的关键词并接收独立推送。</span>
+              </div>
               <div class="form-group">
                 <label for="botToken" class="form-label">Bot Token</label>
                 <input type="text" id="botToken" class="input-field" placeholder="从 @BotFather 获取" />

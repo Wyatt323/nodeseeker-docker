@@ -22,6 +22,8 @@ export const baseConfigUpdateSchema = z.object({
     bound_user_username: z.string().optional(),
     stop_push: z.union([z.number().int().min(0).max(1), z.boolean().transform(val => val ? 1 : 0)]).optional(),
     only_title: z.union([z.number().int().min(0).max(1), z.boolean().transform(val => val ? 1 : 0)]).optional(),
+    telegram_mode: z.enum(['disabled', 'webhook', 'polling']).optional(),
+    allowed_tg_ids: z.string().max(5000).optional(),
     rss_url: z.string().url('RSS URL格式不正确').optional(),
     rss_interval_seconds: z.number().int().min(10).max(3600).optional(),
     rss_proxy: z.string().optional(),
@@ -42,6 +44,7 @@ export const postSchema = z.object({
 
 // 关键词订阅验证 Schema
 export const keywordSubSchema = z.object({
+    owner_chat_id: z.string().regex(/^-?\d+$/, 'Telegram ID 必须是数字').optional(),
     keyword1: z.string().max(100, '关键词1不能超过100个字符').optional(),
     keyword2: z.string().max(100, '关键词2不能超过100个字符').optional(),
     keyword3: z.string().max(100, '关键词3不能超过100个字符').optional(),
@@ -56,6 +59,7 @@ export const keywordSubSchema = z.object({
 
 // 关键词订阅更新验证 Schema
 export const keywordSubUpdateSchema = z.object({
+    owner_chat_id: z.string().regex(/^-?\d+$/).optional(),
     keyword1: z.string().max(100).optional(),
     keyword2: z.string().max(100).optional(),
     keyword3: z.string().max(100).optional(),

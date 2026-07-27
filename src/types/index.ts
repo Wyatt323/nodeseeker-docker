@@ -13,6 +13,7 @@ export interface BaseConfig {
   rss_interval_seconds?: number;
   rss_proxy?: string;
   telegram_mode?: string; // 'disabled' | 'webhook' | 'polling'
+  allowed_tg_ids?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -36,11 +37,35 @@ export interface Post {
 // 关键词订阅接口
 export interface KeywordSub {
   id?: number;
+  owner_chat_id?: string;
   keyword1?: string;
   keyword2?: string;
   keyword3?: string;
   creator?: string;
   category?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TelegramAccount {
+  chat_id: string;
+  user_name?: string;
+  username?: string;
+  enabled: number;
+  stop_push: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PostDelivery {
+  id?: number;
+  post_id: number;
+  chat_id: string;
+  sub_id: number;
+  status: number; // 0=待推送, 1=成功, 2=失败
+  last_error?: string;
+  attempts: number;
+  pushed_at?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -267,5 +292,6 @@ export interface EnvVars {
   RSS_TIMEOUT: number;
   RSS_CHECK_ENABLED: boolean;
   TELEGRAM_WEBHOOK_URL?: string;
+  TELEGRAM_WEBHOOK_SECRET?: string;
   CORS_ORIGINS: string;
 }

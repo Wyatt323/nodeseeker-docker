@@ -19,6 +19,7 @@ import {
 import type { ContextVariables } from '../types';
 import { getEnvConfig } from '../config/env';
 import { logger } from '../utils/logger';
+import { adminSessionMiddleware } from '../middleware/adminSession';
 
 /**
  * 智能构建 Webhook URL，考虑 CDN 代理情况
@@ -138,36 +139,8 @@ apiRoutes.get('/stats/charts', async (c) => {
     }
 });
 
-// Session 中间件
-const sessionMiddleware = async (c: any, next: any) => {
-    const authHeader = c.req.header('Authorization');
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return c.json(createErrorResponse('请提供有效的认证token'), 401);
-    }
-
-    const sessionId = authHeader.substring(7);
-    const authService = c.get('authService');
-
-    // 获取客户端IP地址用于验证
-    const ipAddress = c.req.header('x-forwarded-for') ||
-                     c.req.header('x-real-ip') ||
-                     c.env?.CF_CONNECTING_IP ||
-                     '127.0.0.1';
-
-    const verification = await authService.verifySession(sessionId, ipAddress);
-    if (!verification.valid) {
-        return c.json(createErrorResponse(verification.message || 'Session无效'), 401);
-    }
-
-    // 设置session数据和向后兼容的payload
-    c.set('sessionData', verification.sessionData);
-    c.set('jwtPayload', verification.payload);
-    await next();
-};
-
-// 应用Session中间件到所有后续API路由
-apiRoutes.use('*', sessionMiddleware);
+// 应用 Session 中间件到所有后续 API 路由
+apiRoutes.use('*', adminSessionMiddleware);
 
 // 获取基础配置
 apiRoutes.get('/config', async (c) => {
@@ -180,9 +153,10 @@ apiRoutes.get('/config', async (c) => {
         }
 
         // 不返回密码
-        const { password, ...safeConfig } = config;
+        const { password, bot_token, ...safeConfig } = config;
+        const responseConfig = { ...safeConfig, has_bot_token: !!bot_token };
 
-        return c.json(createSuccessResponse(safeConfig));
+        return c.json(createSuccessResponse(responseConfig));
     } catch (error) {
         return c.json(createErrorResponse(`获取配置失败: ${error}`), 500);
     }
@@ -195,15 +169,19 @@ apiRoutes.put('/config', createValidationMiddleware(baseConfigUpdateSchema), asy
         const dbService = c.get('dbService');
 
         const config = dbService.updateBaseConfig(validatedData);
+        if (validatedData.allowed_tg_ids !== undefined) {
+            dbService.syncTelegramUsersFromWhitelist();
+        }
 
         if (!config) {
             return c.json(createErrorResponse('更新配置失败'), 500);
         }
 
         // 不返回密码
-        const { password, ...safeConfig } = config;
+        const { password, bot_token, ...safeConfig } = config;
+        const responseConfig = { ...safeConfig, has_bot_token: !!bot_token };
 
-        return c.json(createSuccessResponse(safeConfig, '配置更新成功'));
+        return c.json(createSuccessResponse(responseConfig, '配置更新成功'));
     } catch (error) {
         return c.json(createErrorResponse(`更新配置失败: ${error}`), 500);
     }
@@ -242,7 +220,7 @@ apiRoutes.post('/bot-token', createValidationMiddleware(botTokenSchema), async (
                 logger.debug('自动构建的 Webhook URL:', finalWebhookUrl);
             }
             
-            webhookResult = await telegramService.setWebhook(finalWebhookUrl);
+            webhookResult = await telegramService.setWebhook(finalWebhookUrl, getEnvConfig().TELEGRAM_WEBHOOK_SECRET);
             
             if (!webhookResult.success) {
                 logger.error('Webhook 设置失败:', webhookResult.error);
@@ -303,6 +281,9 @@ apiRoutes.post('/subscriptions', createValidationMiddleware(keywordSubSchema), a
         const dbService = c.get('dbService');
 
         const subscription = dbService.createKeywordSub(validatedData);
+        if (subscription.owner_chat_id) {
+            dbService.upsertTelegramUser({ chat_id: subscription.owner_chat_id, enabled: 1 });
+        }
 
         return c.json(createSuccessResponse(subscription, '订阅添加成功'), 201);
     } catch (error) {
