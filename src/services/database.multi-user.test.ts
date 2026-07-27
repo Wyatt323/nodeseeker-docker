@@ -98,6 +98,20 @@ describe('multi-user Telegram isolation', () => {
     service.close();
   });
 
+  it('deletes subscriptions by exact keyword within the owner scope', () => {
+    const service = createTestService();
+    service.createKeywordSub({ owner_chat_id: '111', keyword1: 'alpha', keyword2: 'shared' });
+    service.createKeywordSub({ owner_chat_id: '111', keyword1: 'beta', keyword3: 'shared' });
+    service.createKeywordSub({ owner_chat_id: '222', keyword1: 'shared' });
+
+    expect(service.deleteKeywordByOwner('111', 'SHARED')).toBe(2);
+    const ownerSubs = service.getKeywordSubsByOwner('111');
+    expect(ownerSubs).toHaveLength(2);
+    expect(ownerSubs.flatMap(sub => [sub.keyword1, sub.keyword2, sub.keyword3]).filter(Boolean).sort()).toEqual(['alpha', 'beta']);
+    expect(service.getKeywordSubsByOwner('222')).toHaveLength(1);
+    service.close();
+  });
+
   it('tracks delivery failures independently per user', () => {
     const service = createTestService();
     service.upsertTelegramUser({ chat_id: '111', enabled: 1 });

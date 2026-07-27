@@ -1,8 +1,10 @@
-# NodeSeeker Docker
+> **本项目是基于 [ljnchn/nodeseeker-docker](https://github.com/ljnchn/nodeseeker-docker) 优化开发的多用户版本。**
 
-[![Docker Build](https://github.com/ljnchn/NodeSeeker-docker/actions/workflows/docker-build.yml/badge.svg)](https://github.com/ljnchn/NodeSeeker-docker/actions/workflows/docker-build.yml)
+# NodeSeeker Docker 多用户版
+
+[![Docker Build](https://github.com/Wyatt323/nodeseeker-docker/actions/workflows/docker-build.yml/badge.svg)](https://github.com/Wyatt323/nodeseeker-docker/actions/workflows/docker-build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker Hub](https://img.shields.io/docker/v/ersichub/nodeseeker?label=Docker%20Hub)](https://hub.docker.com/r/ersichub/nodeseeker)
+[![Docker Hub](https://img.shields.io/docker/v/wyatt323/nodeseeker?label=Docker%20Hub)](https://hub.docker.com/r/wyatt323/nodeseeker)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-ff69b4.svg)](https://bun.sh/)
 
 基于 **Bun + Hono.js + SQLite** 的 NodeSeek 社区 RSS 监控与 Telegram 推送系统。
@@ -28,26 +30,22 @@
 docker run -d \
   --name nodeseeker \
   -p 3010:3010 \
-  -v nodeseeker_data:/usr/src/app/data \
-  ersichub/nodeseeker:latest
+  -v "$(pwd)/data:/usr/src/app/data" \
+  wyatt323/nodeseeker:latest
 ```
 
 访问 http://localhost:3010，首次使用时创建管理员账户即可。
 
 ### Docker Compose
 
-`docker-compose.yml` 和 `docker-compose.prod.yml` 默认直接拉取已由 GitHub Actions 构建的多架构镜像 `wyatt323/nodeseeker:latest`，不会在部署服务器上本地构建。
+只需要创建部署目录并下载一个 `docker-compose.yml`，无需克隆整个仓库。Compose 会直接拉取 GitHub Actions 构建的多架构镜像 `wyatt323/nodeseeker:latest`。
 
 ```bash
-git clone https://github.com/Wyatt323/nodeseeker-docker.git
-cd nodeseeker-docker
-
-# （可选）配置环境变量
-cp .env.example .env
-
-# 拉取最新镜像并启动
+mkdir -p nodeseeker
+cd nodeseeker
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/Wyatt323/nodeseeker-docker/main/docker-compose.yml
 mkdir -p data
-docker compose pull
 docker compose up -d
 ```
 
@@ -115,11 +113,13 @@ bun test             # 运行测试
 |------|------|
 | `/start` | 白名单用户启用自己的独立订阅空间 |
 | `/getme` | 查看自己的 Telegram ID 和授权状态 |
-| `/list` | 只查看自己的订阅列表 |
-| `/add 关键词1 关键词2` | 添加到自己的订阅（最多 3 个关键词） |
-| `/del 订阅ID` | 只能删除自己的订阅 |
+| `/commands` / `/help` | 显示 Bot 的全部命令 |
+| `/list` | 直接列出自己添加的全部关键词，不显示内部 ID |
+| `/add 关键词1 关键词2 关键词3` | 按空格识别并添加 1 至 3 个独立关键词 |
+| `/del 具体关键词` | 按关键词删除，只影响自己的订阅 |
 | `/post` | 查看最近文章 |
 | `/stop` / `/resume` | 只暂停 / 恢复自己的推送 |
+| `/unbind` | 清除自己的运行时绑定 |
 
 <details>
 <summary>关键词匹配格式</summary>
@@ -133,6 +133,8 @@ bun test             # 运行测试
 
 ```bash
 # 示例
+/add 你好 我号 大家好          # 识别为“你好”“我号”“大家好”三个关键词
+/del 我号                     # 删除具体关键词
 /add /javascript/i React       # 混合使用
 /add regex:AI|人工智能 深度学习    # regex: 前缀
 /add /\d+\.?\d*GB/ 内存         # 匹配规格

@@ -1,6 +1,7 @@
 import { Context } from 'grammy';
 import { TelegramBaseService } from './base';
 import { logger } from '../../utils/logger';
+import { parseAddKeywords, parseDeleteKeyword } from './commands';
 
 export class TelegramWebhookService extends TelegramBaseService {
   private isPolling = false;
@@ -21,6 +22,7 @@ export class TelegramWebhookService extends TelegramBaseService {
     if (initialized && !this.handlersReady) {
       this.setupHandlers();
       this.handlersReady = true;
+      await this.setBotCommands();
     }
     return initialized;
   }
@@ -45,7 +47,8 @@ export class TelegramWebhookService extends TelegramBaseService {
 
   private setupHandlers(): void {
     this.bot.command('start', ctx => this.handleStartCommand(ctx));
-    this.bot.command('help', ctx => this.handleHelpCommand(ctx));
+    this.bot.command('help', ctx => this.handleCommandsCommand(ctx));
+    this.bot.command('commands', ctx => this.handleCommandsCommand(ctx));
     this.bot.command('getme', ctx => this.handleGetMeCommand(ctx));
     this.bot.command('list', async ctx => {
       const chatId = await this.requirePermission(ctx);
@@ -174,14 +177,16 @@ export class TelegramWebhookService extends TelegramBaseService {
     try {
       await this.bot.api.setMyCommands([
         { command: 'start', description: '启用自己的订阅空间' },
-        { command: 'list', description: '查看自己的订阅' },
-        { command: 'add', description: '添加关键词（最多 3 个）' },
-        { command: 'del', description: '删除自己的订阅' },
+        { command: 'commands', description: '查看全部可用命令' },
+        { command: 'help', description: '查看全部可用命令' },
+        { command: 'getme', description: '查看自己的 Telegram ID' },
+        { command: 'list', description: '列出自己的全部关键词' },
+        { command: 'add', description: '添加 1 至 3 个关键词' },
+        { command: 'del', description: '按具体关键词删除订阅' },
         { command: 'post', description: '查看最近文章' },
         { command: 'stop', description: '暂停自己的推送' },
         { command: 'resume', description: '恢复自己的推送' },
-        { command: 'getme', description: '查看自己的 Telegram ID' },
-        { command: 'help', description: '查看帮助' },
+        { command: 'unbind', description: '清除自己的运行时绑定' },
       ]);
       return true;
     } catch (error) {
@@ -204,47 +209,52 @@ export class TelegramWebhookService extends TelegramBaseService {
       username: user?.username || undefined,
       enabled: 1,
     });
-    await ctx.reply(`🎉 已启用您的独立订阅空间。\n\n🆔 Telegram ID：${chatId}\n/list 查看订阅\n/add 关键词1 关键词2 添加订阅\n/del ID 删除订阅`);
+    await ctx.reply(`🎉 已启用您的独立订阅空间。\n\n🆔 Telegram ID：${chatId}\n/commands 查看全部命令\n/list 查看关键词\n/add 关键词1 关键词2 添加关键词\n/del 具体关键词 删除关键词`);
   }
 
   private async handleListCommand(ctx: Context, chatId: string): Promise<void> {
     const subscriptions = this.dbService.getKeywordSubsByOwner(chatId);
-    if (!subscriptions.length) {
-      await ctx.reply('📝 您还没有订阅。使用 /add 关键词1 关键词2 添加。');
+    const keywords = [...new Set(
+      subscriptions
+        .flatMap(sub => [sub.keyword1, sub.keyword2, sub.keyword3])
+        .filter((keyword): keyword is string => !!keyword?.trim())
+        .map(keyword => keyword.trim()),
+    )];
+
+    if (!keywords.length) {
+      await ctx.reply('📝 您还没有关键词。使用 /add 关键词1 关键词2 添加。');
       return;
     }
-    const lines = subscriptions.map((sub, index) => {
-      const keywords = [sub.keyword1, sub.keyword2, sub.keyword3].filter(Boolean).join(' + ');
-      const filters = [sub.creator ? `作者:${sub.creator}` : '', sub.category ? `分类:${sub.category}` : ''].filter(Boolean).join(' ');
-      return `${index + 1}. ID:${sub.id}\n🔍 ${keywords || filters}${keywords && filters ? `\n${filters}` : ''}`;
-    });
-    await ctx.reply(`📋 您的订阅\n\n${lines.join('\n\n')}\n\n💡 /del 订阅ID`);
+
+    await ctx.reply(`📋 您添加的关键词\n\n${keywords.map(keyword => `• ${keyword}`).join('\n')}\n\n💡 删除：/del 具体关键词`);
   }
 
   private async handleAddCommand(ctx: Context, chatId: string): Promise<void> {
-    const args = ctx.message?.text?.trim().split(/\s+/).slice(1) || [];
-    if (!args.length) {
-      await ctx.reply('❌ 用法：/add 关键词1 关键词2 关键词3（最多 3 个，关键词之间为 AND）');
+    const keywords = parseAddKeywords(ctx.message?.text);
+    if (!keywords.length) {
+      await ctx.reply('❌ 用法：/add 关键词1 关键词2 关键词3（空格分隔，最多 3 个，关键词之间为 AND）');
       return;
     }
-    const keywords = args.slice(0, 3);
-    const sub = this.dbService.createKeywordSub({
+
+    this.dbService.createKeywordSub({
       owner_chat_id: chatId,
       keyword1: keywords[0],
       keyword2: keywords[1],
       keyword3: keywords[2],
     });
-    await ctx.reply(`✅ 已添加到您的独立订阅。\nID: ${sub.id}\n关键词: ${keywords.join(' + ')}`);
+    await ctx.reply(`✅ 已添加 ${keywords.length} 个关键词：\n${keywords.map(keyword => `• ${keyword}`).join('\n')}`);
   }
 
   private async handleDeleteCommand(ctx: Context, chatId: string): Promise<void> {
-    const id = Number(ctx.message?.text?.trim().split(/\s+/)[1]);
-    if (!Number.isInteger(id) || id <= 0) {
-      await ctx.reply('❌ 用法：/del 订阅ID');
+    const keyword = parseDeleteKeyword(ctx.message?.text);
+    if (!keyword) {
+      await ctx.reply('❌ 用法：/del 具体关键词\n例如：/del 你好');
       return;
     }
-    const deleted = this.dbService.deleteKeywordSub(id, chatId);
-    await ctx.reply(deleted ? `✅ 已删除您的订阅 ${id}。` : `❌ 未找到您的订阅 ${id}。`);
+    const deletedCount = this.dbService.deleteKeywordByOwner(chatId, keyword);
+    await ctx.reply(deletedCount > 0
+      ? `✅ 已删除关键词：${keyword}`
+      : `❌ 未找到您添加的关键词：${keyword}`);
   }
 
   private async handlePostCommand(ctx: Context): Promise<void> {
@@ -253,8 +263,8 @@ export class TelegramWebhookService extends TelegramBaseService {
     await ctx.reply(text ? `📰 最近 10 条文章\n\n${text}` : '📝 暂无文章。', { parse_mode: 'Markdown' });
   }
 
-  private async handleHelpCommand(ctx: Context): Promise<void> {
-    await ctx.reply(`🤖 NodeSeeker 多用户 Bot\n\n/start - 启用自己的空间\n/getme - 查看自己的 Telegram ID\n/list - 查看自己的关键词\n/add 关键词1 关键词2 关键词3 - 添加关键词（AND）\n/del ID - 删除自己的关键词\n/post - 最近文章\n/stop - 暂停自己的推送\n/resume - 恢复自己的推送\n\n每个用户的关键词、暂停状态、失败重试和推送记录互相隔离。`);
+  private async handleCommandsCommand(ctx: Context): Promise<void> {
+    await ctx.reply(`🤖 NodeSeeker 多用户 Bot 命令\n\n/start - 启用自己的订阅空间\n/commands - 显示全部命令\n/help - 显示全部命令\n/getme - 查看自己的 Telegram ID 和授权状态\n/list - 列出自己添加的全部关键词\n/add 关键词1 关键词2 关键词3 - 按空格添加 1 至 3 个关键词（AND）\n/del 具体关键词 - 删除包含该关键词的自己的订阅\n/post - 查看最近 10 条文章\n/stop - 暂停自己的推送\n/resume - 恢复自己的推送\n/unbind - 清除自己的运行时绑定\n\n示例：\n/add 你好 我号 大家好\n/del 我号\n\n每个用户的关键词、暂停状态、失败重试和推送记录互相隔离。`);
   }
 
   private async handleGetMeCommand(ctx: Context): Promise<void> {

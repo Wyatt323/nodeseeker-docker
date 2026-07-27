@@ -525,6 +525,60 @@ export class DatabaseService {
     return stmt.all(ownerChatId) as KeywordSub[];
   }
 
+  deleteKeywordByOwner(ownerChatId: string, keyword: string): number {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (!normalizedKeyword) return 0;
+
+    const subscriptions = this.db.query(`
+      SELECT * FROM keywords_sub
+      WHERE owner_chat_id = ?
+        AND (
+          lower(trim(coalesce(keyword1, ''))) = ? OR
+          lower(trim(coalesce(keyword2, ''))) = ? OR
+          lower(trim(coalesce(keyword3, ''))) = ?
+        )
+    `).all(ownerChatId, normalizedKeyword, normalizedKeyword, normalizedKeyword) as KeywordSub[];
+
+    const updateStmt = this.db.query(`
+      UPDATE keywords_sub
+      SET keyword1 = ?, keyword2 = ?, keyword3 = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND owner_chat_id = ?
+    `);
+    const deleteStmt = this.db.query(`
+      DELETE FROM keywords_sub WHERE id = ? AND owner_chat_id = ?
+    `);
+
+    let removedCount = 0;
+    const transaction = this.db.transaction(() => {
+      for (const sub of subscriptions) {
+        const remainingKeywords = [sub.keyword1, sub.keyword2, sub.keyword3]
+          .filter((item): item is string => !!item?.trim())
+          .filter(item => {
+            const shouldRemove = item.trim().toLowerCase() === normalizedKeyword;
+            if (shouldRemove) removedCount++;
+            return !shouldRemove;
+          });
+
+        if (remainingKeywords.length === 0 && !sub.creator?.trim() && !sub.category?.trim()) {
+          deleteStmt.run(sub.id, ownerChatId);
+        } else {
+          updateStmt.run(
+            remainingKeywords[0] || null,
+            remainingKeywords[1] || null,
+            remainingKeywords[2] || null,
+            sub.id,
+            ownerChatId,
+          );
+        }
+      }
+    });
+    transaction();
+
+    this.clearCacheByPattern('KeywordSubs');
+    this.clearCacheByPattern('Subscriptions');
+    return removedCount;
+  }
+
   deleteKeywordSub(id: number, ownerChatId?: string): boolean {
     const stmt = ownerChatId
       ? this.db.query('DELETE FROM keywords_sub WHERE id = ? AND owner_chat_id = ?')
