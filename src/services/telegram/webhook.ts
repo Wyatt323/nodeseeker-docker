@@ -1,7 +1,7 @@
 import { Context } from 'grammy';
 import { TelegramBaseService } from './base';
 import { logger } from '../../utils/logger';
-import { parseAddRule, parseDeleteKeyword, formatStoredRule } from './commands';
+import { parseAddRequest, parseDeleteKeyword, formatStoredRule } from './commands';
 
 export class TelegramWebhookService extends TelegramBaseService {
   private isPolling = false;
@@ -229,23 +229,29 @@ export class TelegramWebhookService extends TelegramBaseService {
   }
 
   private async handleAddCommand(ctx: Context, chatId: string): Promise<void> {
-    let parsedRule;
+    let parsedRequest;
     try {
-      parsedRule = parseAddRule(ctx.message?.text);
+      parsedRequest = parseAddRequest(ctx.message?.text);
     } catch (error) {
       const message = error instanceof Error ? error.message : '规则格式不正确';
-      await ctx.reply(`❌ ${message}\n\n用法：\n/add 你好 我号 大家好\n/add 重置 and (chatgpt or gpt or codex)`);
+      await ctx.reply(`❌ ${message}\n\n用法：\n/add 你好 我好 大家好（3 条独立规则）\n/add 你好 AND 我好 AND 大家好（1 条同时匹配规则）\n/add 重置 AND (chatgpt OR gpt OR codex)`);
       return;
     }
 
-    const keywords = parsedRule.groups;
-    this.dbService.createKeywordSub({
-      owner_chat_id: chatId,
-      keyword1: keywords[0],
-      keyword2: keywords[1],
-      keyword3: keywords[2],
-    });
-    await ctx.reply(`✅ 已添加关键词规则：\n${parsedRule.display}`);
+    for (const rule of parsedRequest.rules) {
+      this.dbService.createKeywordSub({
+        owner_chat_id: chatId,
+        keyword1: rule.groups[0],
+        keyword2: rule.groups[1],
+        keyword3: rule.groups[2],
+      });
+    }
+
+    if (parsedRequest.mode === 'independent') {
+      await ctx.reply(`✅ 已添加 ${parsedRequest.rules.length} 条独立关键词规则：\n${parsedRequest.rules.map(rule => `• ${rule.display}`).join('\n')}`);
+    } else {
+      await ctx.reply(`✅ 已添加组合关键词规则：\n${parsedRequest.rules[0].display}`);
+    }
   }
 
   private async handleDeleteCommand(ctx: Context, chatId: string): Promise<void> {
@@ -267,7 +273,7 @@ export class TelegramWebhookService extends TelegramBaseService {
   }
 
   private async handleCommandsCommand(ctx: Context): Promise<void> {
-    await ctx.reply(`🤖 NodeSeeker 多用户 Bot 命令\n\n/start - 启用自己的订阅空间\n/commands - 显示全部命令\n/help - 显示全部命令\n/getme - 查看自己的 Telegram ID 和授权状态\n/list - 列出自己添加的全部关键词规则\n/add 关键词1 关键词2 关键词3 - 添加普通 AND 规则\n/add 关键词1 and (选项1 or 选项2) - 添加 AND + OR 组合规则\n/del 具体关键词 - 删除自己的具体关键词\n/post - 查看最近 10 条文章\n/stop - 暂停自己的推送\n/resume - 恢复自己的推送\n/unbind - 清除自己的运行时绑定\n\n示例：\n/add 你好 我号 大家好\n/add 重置 and (chatgpt or gpt or codex)\n/del gpt\n\n第二个示例表示：必须匹配“重置”，并且还要匹配 ChatGPT、GPT、Codex 中任意一个。`);
+    await ctx.reply(`🤖 NodeSeeker 多用户 Bot 命令\n\n/start - 启用自己的订阅空间\n/commands - 显示全部命令\n/help - 显示全部命令\n/getme - 查看自己的 Telegram ID 和授权状态\n/list - 列出自己添加的全部关键词规则\n/add 词1 词2 词3 - 分别添加多条独立规则（任意一词匹配即推送）\n/add 词1 AND 词2 - 添加一条组合规则（所有词都要匹配）\n/add 词1 AND (选项1 OR 选项2) - 添加 AND + OR 组合规则\n/del 具体关键词 - 删除自己的具体关键词\n/post - 查看最近 10 条文章\n/stop - 暂停自己的推送\n/resume - 恢复自己的推送\n/unbind - 清除自己的运行时绑定\n\n示例：\n/add 你好 我好 大家好\n→ 分别添加 3 条独立规则\n\n/add 你好 AND 我好 AND 大家好\n→ 只有三个词同时匹配才推送\n\n/add 重置 AND (chatgpt OR gpt OR codex)\n→ 匹配“重置”，并匹配括号内任意一个。`);
   }
 
   private async handleGetMeCommand(ctx: Context): Promise<void> {

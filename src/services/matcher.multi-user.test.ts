@@ -40,6 +40,39 @@ function createService(): DatabaseService {
 }
 
 describe('MatcherService multi-user delivery', () => {
+  it('matches whitespace-added keywords independently but explicit AND keywords together', () => {
+    const independentDb = createService();
+    for (const keyword of ['你好', '我好', '大家好']) {
+      independentDb.createKeywordSub({ owner_chat_id: '111', keyword1: keyword });
+    }
+    const independentMatcher = new MatcherService(independentDb);
+    const post = (post_id: number, title: string) => ({
+      post_id,
+      title,
+      memo: '',
+      category: 'tech',
+      creator: 'tester',
+      push_status: 0,
+      pub_date: new Date().toISOString(),
+    });
+
+    expect(independentMatcher.checkPostMatches(post(10, '这里只说你好')).length).toBe(1);
+    expect(independentMatcher.checkPostMatches(post(11, '这里只有大家好')).length).toBe(1);
+    independentDb.close();
+
+    const andDb = createService();
+    andDb.createKeywordSub({
+      owner_chat_id: '111',
+      keyword1: '你好',
+      keyword2: '我好',
+      keyword3: '大家好',
+    });
+    const andMatcher = new MatcherService(andDb);
+    expect(andMatcher.checkPostMatches(post(12, '你好，我好，大家好')).length).toBe(1);
+    expect(andMatcher.checkPostMatches(post(13, '你好，大家好')).length).toBe(0);
+    andDb.close();
+  });
+
   it('matches required keyword plus any alternative from an OR group', () => {
     const db = createService();
     db.createKeywordSub({
