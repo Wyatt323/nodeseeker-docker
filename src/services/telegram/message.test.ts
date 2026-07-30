@@ -24,10 +24,11 @@ describe('Telegram post message formatting', () => {
 
     expect(message.postUrl).toBe('https://www.nodeseek.com/post-123-1');
     expect(message.text).toBe(
-      '🔔 <b><u>标题</u>：</b> 出一台 &lt;动态&gt; &amp; 家宽\n\n' +
-      '📌 <b><u>匹配</u>：</b> 家宽\n\n' +
+      '🔔 <b>标题：</b> 出一台 &lt;动态&gt; &amp; 家宽\n\n' +
+      '📌 <b>匹配：</b> 家宽\n\n' +
       '🔗 <a href="https://www.nodeseek.com/post-123-1">点击查看原帖 →</a>',
     );
+    expect(message.text).not.toContain('<u>');
   });
 
   it('shows Boolean relationships instead of internal storage encoding', () => {

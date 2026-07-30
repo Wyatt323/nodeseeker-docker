@@ -38,8 +38,8 @@ export function buildTelegramPostMessage(post: Post, subscription: KeywordSub): 
   return {
     postUrl,
     text: [
-      `🔔 <b><u>标题</u>：</b> ${title}`,
-      `📌 <b><u>匹配</u>：</b> ${matchedRule}`,
+      `🔔 <b>标题：</b> ${title}`,
+      `📌 <b>匹配：</b> ${matchedRule}`,
       `🔗 <a href="${escapedUrl}">点击查看原帖 →</a>`,
     ].join('\n\n'),
   };
