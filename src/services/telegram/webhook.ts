@@ -1,7 +1,7 @@
 import { Context } from 'grammy';
 import { TelegramBaseService } from './base';
 import { logger } from '../../utils/logger';
-import { parseAddKeywords, parseDeleteKeyword } from './commands';
+import { parseAddRule, parseDeleteKeyword, formatStoredRule } from './commands';
 
 export class TelegramWebhookService extends TelegramBaseService {
   private isPolling = false;
@@ -181,7 +181,7 @@ export class TelegramWebhookService extends TelegramBaseService {
         { command: 'help', description: '查看全部可用命令' },
         { command: 'getme', description: '查看自己的 Telegram ID' },
         { command: 'list', description: '列出自己的全部关键词' },
-        { command: 'add', description: '添加 1 至 3 个关键词' },
+        { command: 'add', description: '添加 AND / OR 关键词规则' },
         { command: 'del', description: '按具体关键词删除订阅' },
         { command: 'post', description: '查看最近文章' },
         { command: 'stop', description: '暂停自己的推送' },
@@ -214,35 +214,38 @@ export class TelegramWebhookService extends TelegramBaseService {
 
   private async handleListCommand(ctx: Context, chatId: string): Promise<void> {
     const subscriptions = this.dbService.getKeywordSubsByOwner(chatId);
-    const keywords = [...new Set(
+    const rules = [...new Set(
       subscriptions
-        .flatMap(sub => [sub.keyword1, sub.keyword2, sub.keyword3])
-        .filter((keyword): keyword is string => !!keyword?.trim())
-        .map(keyword => keyword.trim()),
+        .map(sub => formatStoredRule([sub.keyword1, sub.keyword2, sub.keyword3].filter((keyword): keyword is string => !!keyword?.trim())))
+        .filter(Boolean),
     )];
 
-    if (!keywords.length) {
-      await ctx.reply('📝 您还没有关键词。使用 /add 关键词1 关键词2 添加。');
+    if (!rules.length) {
+      await ctx.reply('📝 您还没有关键词规则。使用 /add 关键词1 关键词2 添加。');
       return;
     }
 
-    await ctx.reply(`📋 您添加的关键词\n\n${keywords.map(keyword => `• ${keyword}`).join('\n')}\n\n💡 删除：/del 具体关键词`);
+    await ctx.reply(`📋 您添加的关键词规则\n\n${rules.map(rule => `• ${rule}`).join('\n')}\n\n💡 删除普通关键词：/del 具体关键词`);
   }
 
   private async handleAddCommand(ctx: Context, chatId: string): Promise<void> {
-    const keywords = parseAddKeywords(ctx.message?.text);
-    if (!keywords.length) {
-      await ctx.reply('❌ 用法：/add 关键词1 关键词2 关键词3（空格分隔，最多 3 个，关键词之间为 AND）');
+    let parsedRule;
+    try {
+      parsedRule = parseAddRule(ctx.message?.text);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '规则格式不正确';
+      await ctx.reply(`❌ ${message}\n\n用法：\n/add 你好 我号 大家好\n/add 重置 and (chatgpt or gpt or codex)`);
       return;
     }
 
+    const keywords = parsedRule.groups;
     this.dbService.createKeywordSub({
       owner_chat_id: chatId,
       keyword1: keywords[0],
       keyword2: keywords[1],
       keyword3: keywords[2],
     });
-    await ctx.reply(`✅ 已添加 ${keywords.length} 个关键词：\n${keywords.map(keyword => `• ${keyword}`).join('\n')}`);
+    await ctx.reply(`✅ 已添加关键词规则：\n${parsedRule.display}`);
   }
 
   private async handleDeleteCommand(ctx: Context, chatId: string): Promise<void> {
@@ -264,7 +267,7 @@ export class TelegramWebhookService extends TelegramBaseService {
   }
 
   private async handleCommandsCommand(ctx: Context): Promise<void> {
-    await ctx.reply(`🤖 NodeSeeker 多用户 Bot 命令\n\n/start - 启用自己的订阅空间\n/commands - 显示全部命令\n/help - 显示全部命令\n/getme - 查看自己的 Telegram ID 和授权状态\n/list - 列出自己添加的全部关键词\n/add 关键词1 关键词2 关键词3 - 按空格添加 1 至 3 个关键词（AND）\n/del 具体关键词 - 删除包含该关键词的自己的订阅\n/post - 查看最近 10 条文章\n/stop - 暂停自己的推送\n/resume - 恢复自己的推送\n/unbind - 清除自己的运行时绑定\n\n示例：\n/add 你好 我号 大家好\n/del 我号\n\n每个用户的关键词、暂停状态、失败重试和推送记录互相隔离。`);
+    await ctx.reply(`🤖 NodeSeeker 多用户 Bot 命令\n\n/start - 启用自己的订阅空间\n/commands - 显示全部命令\n/help - 显示全部命令\n/getme - 查看自己的 Telegram ID 和授权状态\n/list - 列出自己添加的全部关键词规则\n/add 关键词1 关键词2 关键词3 - 添加普通 AND 规则\n/add 关键词1 and (选项1 or 选项2) - 添加 AND + OR 组合规则\n/del 具体关键词 - 删除自己的具体关键词\n/post - 查看最近 10 条文章\n/stop - 暂停自己的推送\n/resume - 恢复自己的推送\n/unbind - 清除自己的运行时绑定\n\n示例：\n/add 你好 我号 大家好\n/add 重置 and (chatgpt or gpt or codex)\n/del gpt\n\n第二个示例表示：必须匹配“重置”，并且还要匹配 ChatGPT、GPT、Codex 中任意一个。`);
   }
 
   private async handleGetMeCommand(ctx: Context): Promise<void> {

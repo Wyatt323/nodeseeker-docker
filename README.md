@@ -115,7 +115,8 @@ bun test             # 运行测试
 | `/getme` | 查看自己的 Telegram ID 和授权状态 |
 | `/commands` / `/help` | 显示 Bot 的全部命令 |
 | `/list` | 直接列出自己添加的全部关键词，不显示内部 ID |
-| `/add 关键词1 关键词2 关键词3` | 按空格识别并添加 1 至 3 个独立关键词 |
+| `/add 关键词1 关键词2 关键词3` | 按空格添加普通 AND 关键词规则 |
+| `/add 关键词1 and (选项1 or 选项2)` | 添加 AND + OR 组合规则，括号内任意一个匹配即可 |
 | `/del 具体关键词` | 按关键词删除，只影响自己的订阅 |
 | `/post` | 查看最近文章 |
 | `/stop` / `/resume` | 只暂停 / 恢复自己的推送 |
@@ -135,6 +136,8 @@ bun test             # 运行测试
 # 示例
 /add 你好 我号 大家好          # 识别为“你好”“我号”“大家好”三个关键词
 /del 我号                     # 删除具体关键词
+/add 重置 and (chatgpt or gpt or codex)
+# 上一条表示：必须出现“重置”，并且还要出现 chatgpt、gpt、codex 中任意一个
 /add /javascript/i React       # 混合使用
 /add regex:AI|人工智能 深度学习    # regex: 前缀
 /add /\d+\.?\d*GB/ 内存         # 匹配规格

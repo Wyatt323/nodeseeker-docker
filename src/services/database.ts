@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { createDatabaseConnection } from '../config/database';
 import type { BaseConfig, Post, KeywordSub, TelegramAccount, PostDelivery } from '../types';
 import { logger } from '../utils/logger';
+import { decodeKeywordGroup, formatKeywordGroup } from './telegram/commands';
 
 export class DatabaseService {
   private queryCache: Map<string, { data: any; timestamp: number; ttl: number }>;
@@ -389,9 +390,13 @@ export class DatabaseService {
           const keywords = [sub.keyword1, sub.keyword2, sub.keyword3]
             .filter(k => k && k.trim().length > 0) as string[];
           
-          for (const keyword of keywords) {
-            conditions.push('(p.title LIKE ? OR p.memo LIKE ?)');
-            params.push(`%${keyword}%`, `%${keyword}%`);
+          for (const keywordGroup of keywords) {
+            const alternatives = decodeKeywordGroup(keywordGroup);
+            const alternativeConditions = alternatives.map(() => '(p.title LIKE ? OR p.memo LIKE ?)');
+            conditions.push(`(${alternativeConditions.join(' OR ')})`);
+            for (const alternative of alternatives) {
+              params.push(`%${alternative}%`, `%${alternative}%`);
+            }
           }
           
           // 作者匹配
@@ -529,16 +534,7 @@ export class DatabaseService {
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (!normalizedKeyword) return 0;
 
-    const subscriptions = this.db.query(`
-      SELECT * FROM keywords_sub
-      WHERE owner_chat_id = ?
-        AND (
-          lower(trim(coalesce(keyword1, ''))) = ? OR
-          lower(trim(coalesce(keyword2, ''))) = ? OR
-          lower(trim(coalesce(keyword3, ''))) = ?
-        )
-    `).all(ownerChatId, normalizedKeyword, normalizedKeyword, normalizedKeyword) as KeywordSub[];
-
+    const subscriptions = this.getKeywordSubsByOwner(ownerChatId);
     const updateStmt = this.db.query(`
       UPDATE keywords_sub
       SET keyword1 = ?, keyword2 = ?, keyword3 = ?, updated_at = CURRENT_TIMESTAMP
@@ -551,21 +547,43 @@ export class DatabaseService {
     let removedCount = 0;
     const transaction = this.db.transaction(() => {
       for (const sub of subscriptions) {
-        const remainingKeywords = [sub.keyword1, sub.keyword2, sub.keyword3]
-          .filter((item): item is string => !!item?.trim())
-          .filter(item => {
-            const shouldRemove = item.trim().toLowerCase() === normalizedKeyword;
-            if (shouldRemove) removedCount++;
-            return !shouldRemove;
-          });
+        const removedBeforeSub = removedCount;
+        const remainingGroups: string[] = [];
+        for (const group of [sub.keyword1, sub.keyword2, sub.keyword3].filter((item): item is string => !!item?.trim())) {
+          const alternatives = decodeKeywordGroup(group);
+          const isOrGroup = alternatives.length > 1;
+          const matchesWholeGroup = formatKeywordGroup(group).toLowerCase() === normalizedKeyword;
 
-        if (remainingKeywords.length === 0 && !sub.creator?.trim() && !sub.category?.trim()) {
+          if (matchesWholeGroup) {
+            removedCount++;
+            continue;
+          }
+
+          if (isOrGroup) {
+            const remainingAlternatives = alternatives.filter(item => {
+              const shouldRemove = item.toLowerCase() === normalizedKeyword;
+              if (shouldRemove) removedCount++;
+              return !shouldRemove;
+            });
+            if (remainingAlternatives.length > 1) remainingGroups.push(`or:${remainingAlternatives.join('|')}`);
+            else if (remainingAlternatives.length === 1) remainingGroups.push(remainingAlternatives[0]);
+            continue;
+          }
+
+          if (group.trim().toLowerCase() === normalizedKeyword) {
+            removedCount++;
+          } else {
+            remainingGroups.push(group);
+          }
+        }
+
+        if (remainingGroups.length === 0 && !sub.creator?.trim() && !sub.category?.trim()) {
           deleteStmt.run(sub.id, ownerChatId);
-        } else {
+        } else if (removedCount > removedBeforeSub) {
           updateStmt.run(
-            remainingKeywords[0] || null,
-            remainingKeywords[1] || null,
-            remainingKeywords[2] || null,
+            remainingGroups[0] || null,
+            remainingGroups[1] || null,
+            remainingGroups[2] || null,
             sub.id,
             ownerChatId,
           );

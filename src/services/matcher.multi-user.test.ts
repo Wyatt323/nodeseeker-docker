@@ -40,6 +40,32 @@ function createService(): DatabaseService {
 }
 
 describe('MatcherService multi-user delivery', () => {
+  it('matches required keyword plus any alternative from an OR group', () => {
+    const db = createService();
+    db.createKeywordSub({
+      owner_chat_id: '111',
+      keyword1: '重置',
+      keyword2: 'or:chatgpt|gpt|codex',
+    });
+    const matcher = new MatcherService(db);
+
+    const post = (post_id: number, title: string) => ({
+      post_id,
+      title,
+      memo: '',
+      category: 'tech',
+      creator: 'tester',
+      push_status: 0,
+      pub_date: new Date().toISOString(),
+    });
+
+    expect(matcher.checkPostMatches(post(1, '重置 ChatGPT 账号教程')).length).toBe(1);
+    expect(matcher.checkPostMatches(post(2, 'Codex 重置方法')).length).toBe(1);
+    expect(matcher.checkPostMatches(post(3, '重置普通账号')).length).toBe(0);
+    expect(matcher.checkPostMatches(post(4, 'ChatGPT 新功能')).length).toBe(0);
+    db.close();
+  });
+
   it('creates and updates one isolated delivery per matching user', async () => {
     const db = createService();
     for (const chatId of ['111', '222']) db.upsertTelegramUser({ chat_id: chatId, enabled: 1 });

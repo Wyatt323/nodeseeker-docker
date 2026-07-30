@@ -1,6 +1,7 @@
 import { DatabaseService } from './database';
 import { TelegramPushService } from './telegram/push';
 import { logger } from '../utils/logger';
+import { decodeKeywordGroup } from './telegram/commands';
 import type { Post, KeywordSub, BaseConfig, PushResult } from '../types';
 
 export interface MatchResult {
@@ -126,22 +127,32 @@ export class MatcherService {
     };
     const matchedKeywords: string[] = [];
 
-    for (const keyword of keywords) {
-      let matched = false;
-      if (this.performMatch(titleText, keyword)) {
-        matchDetails.titleMatches.push(keyword);
-        matched = true;
-      } else if (!config.only_title && this.performMatch(contentText, keyword)) {
-        matchDetails.contentMatches.push(keyword);
-        matched = true;
-      } else if (!subscription.creator && this.performMatch(creatorText, keyword)) {
-        matchDetails.authorMatches.push(keyword);
-        matched = true;
-      } else if (!subscription.category && this.performMatch(categoryText, keyword)) {
-        matchDetails.categoryMatches.push(keyword);
-        matched = true;
+    for (const keywordGroup of keywords) {
+      const alternatives = decodeKeywordGroup(keywordGroup);
+      let matchedAlternative: string | null = null;
+      let matchedLocation: keyof typeof matchDetails | null = null;
+
+      for (const alternative of alternatives) {
+        if (this.performMatch(titleText, alternative)) {
+          matchedAlternative = alternative;
+          matchedLocation = 'titleMatches';
+        } else if (!config.only_title && this.performMatch(contentText, alternative)) {
+          matchedAlternative = alternative;
+          matchedLocation = 'contentMatches';
+        } else if (!subscription.creator && this.performMatch(creatorText, alternative)) {
+          matchedAlternative = alternative;
+          matchedLocation = 'authorMatches';
+        } else if (!subscription.category && this.performMatch(categoryText, alternative)) {
+          matchedAlternative = alternative;
+          matchedLocation = 'categoryMatches';
+        }
+        if (matchedAlternative) break;
       }
-      if (matched) matchedKeywords.push(keyword);
+
+      if (matchedAlternative && matchedLocation) {
+        matchDetails[matchedLocation].push(matchedAlternative);
+        matchedKeywords.push(keywordGroup);
+      }
     }
 
     if (matchedKeywords.length !== keywords.length) return this.emptyMatch();

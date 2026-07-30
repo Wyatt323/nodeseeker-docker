@@ -103,12 +103,17 @@ describe('multi-user Telegram isolation', () => {
     service.createKeywordSub({ owner_chat_id: '111', keyword1: 'alpha', keyword2: 'shared' });
     service.createKeywordSub({ owner_chat_id: '111', keyword1: 'beta', keyword3: 'shared' });
     service.createKeywordSub({ owner_chat_id: '222', keyword1: 'shared' });
+    service.createKeywordSub({ owner_chat_id: '111', keyword1: '重置', keyword2: 'or:chatgpt|gpt|codex' });
 
     expect(service.deleteKeywordByOwner('111', 'SHARED')).toBe(2);
     const ownerSubs = service.getKeywordSubsByOwner('111');
-    expect(ownerSubs).toHaveLength(2);
-    expect(ownerSubs.flatMap(sub => [sub.keyword1, sub.keyword2, sub.keyword3]).filter(Boolean).sort()).toEqual(['alpha', 'beta']);
+    expect(ownerSubs).toHaveLength(3);
+    expect(ownerSubs.flatMap(sub => [sub.keyword1, sub.keyword2, sub.keyword3]).filter(Boolean).sort()).toEqual(['alpha', 'beta', 'or:chatgpt|gpt|codex', '重置']);
     expect(service.getKeywordSubsByOwner('222')).toHaveLength(1);
+
+    expect(service.deleteKeywordByOwner('111', 'gpt')).toBe(1);
+    const orSub = service.getKeywordSubsByOwner('111').find(sub => sub.keyword1 === '重置');
+    expect(orSub?.keyword2).toBe('or:chatgpt|codex');
     service.close();
   });
 
