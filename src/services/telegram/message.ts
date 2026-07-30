@@ -29,6 +29,14 @@ export function formatMatchedRule(subscription: KeywordSub): string {
   return [keywordRule, ...filters].filter(Boolean).join('；') || '订阅规则';
 }
 
+export function buildKeywordRuleListMessage(rules: string[]): string {
+  const uniqueRules = [...new Set(rules.map(rule => rule.trim()).filter(Boolean))];
+  if (!uniqueRules.length) return '';
+  return `📋 您添加的关键词规则\n\n${uniqueRules
+    .map(rule => `• <code>${escapeTelegramHtml(rule)}</code>`)
+    .join('\n')}\n\n💡 点击规则即可复制；删除：/del 具体关键词`;
+}
+
 export function buildTelegramPostMessage(post: Post, subscription: KeywordSub): TelegramPostMessage {
   const postUrl = buildPostUrl(post.post_id);
   const title = escapeTelegramHtml(post.title.trim());

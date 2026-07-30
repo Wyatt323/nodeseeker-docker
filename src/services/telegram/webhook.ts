@@ -2,6 +2,7 @@ import { Context } from 'grammy';
 import { TelegramBaseService } from './base';
 import { logger } from '../../utils/logger';
 import { parseAddRequest, parseDeleteKeyword, formatStoredRule } from './commands';
+import { buildKeywordRuleListMessage } from './message';
 
 export class TelegramWebhookService extends TelegramBaseService {
   private isPolling = false;
@@ -225,7 +226,7 @@ export class TelegramWebhookService extends TelegramBaseService {
       return;
     }
 
-    await ctx.reply(`📋 您添加的关键词规则\n\n${rules.map(rule => `• ${rule}`).join('\n')}\n\n💡 删除普通关键词：/del 具体关键词`);
+    await ctx.reply(buildKeywordRuleListMessage(rules), { parse_mode: 'HTML' });
   }
 
   private async handleAddCommand(ctx: Context, chatId: string): Promise<void> {
@@ -273,7 +274,7 @@ export class TelegramWebhookService extends TelegramBaseService {
   }
 
   private async handleCommandsCommand(ctx: Context): Promise<void> {
-    await ctx.reply(`🤖 NodeSeeker 多用户 Bot 命令\n\n/start - 启用自己的订阅空间\n/commands - 显示本说明和全部命令\n/help - 显示本说明和全部命令\n/getme - 查看自己的 Telegram ID、白名单及启用状态\n/list - 按规则列出自己的全部关键词，不显示内部 ID\n/add 词1 词2 词3 - 分别添加多条独立规则（任意一词匹配即推送）\n/add 词1 AND 词2 - 添加一条组合规则（所有词都要匹配）\n/add 词1 AND (选项1 OR 选项2) - 添加 AND + OR 组合规则\n/del 具体关键词 - 删除自己的具体关键词；OR 组会保留其他选项\n/post - 查看最近 10 条 NodeSeek 文章\n/stop - 只暂停自己的推送\n/resume - 只恢复自己的推送\n/unbind - 清除自己的运行时绑定，管理员白名单保持不变\n\n🔔 帖子推送包含：标题、命中的完整规则、原帖链接和 Telegram 网页预览卡片。\n每位用户的关键词、暂停状态、推送结果和失败重试相互隔离。\n\n示例：\n/add 你好 我好 大家好\n→ 分别添加 3 条独立规则\n\n/add 你好 AND 我好 AND 大家好\n→ 只有三个词同时匹配才推送\n\n/add 重置 AND (chatgpt OR gpt OR codex)\n→ 匹配“重置”，并匹配括号内任意一个。`);
+    await ctx.reply(`🤖 NodeSeeker 多用户 Bot 命令\n\n/start - 启用自己的订阅空间\n/commands - 显示本说明和全部命令\n/help - 显示本说明和全部命令\n/getme - 查看自己的 Telegram ID、白名单及启用状态\n/list - 按规则列出自己的全部关键词；点击每条规则即可复制，不显示内部 ID\n/add 词1 词2 词3 - 分别添加多条独立规则（任意一词匹配即推送）\n/add 词1 AND 词2 - 添加一条组合规则（所有词都要匹配）\n/add 词1 AND (选项1 OR 选项2) - 添加 AND + OR 组合规则\n/del 具体关键词 - 删除自己的具体关键词；OR 组会保留其他选项\n/post - 查看最近 10 条 NodeSeek 文章\n/stop - 只暂停自己的推送\n/resume - 只恢复自己的推送\n/unbind - 清除自己的运行时绑定，管理员白名单保持不变\n\n🔔 帖子推送包含：标题、命中的完整规则、原帖链接和 Telegram 网页预览卡片。\n每位用户的关键词、暂停状态、推送结果和失败重试相互隔离。\n\n示例：\n/add 你好 我好 大家好\n→ 分别添加 3 条独立规则\n\n/add 你好 AND 我好 AND 大家好\n→ 只有三个词同时匹配才推送\n\n/add 重置 AND (chatgpt OR gpt OR codex)\n→ 匹配“重置”，并匹配括号内任意一个。`);
   }
 
   private async handleGetMeCommand(ctx: Context): Promise<void> {

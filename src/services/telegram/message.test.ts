@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { buildTelegramPostMessage, escapeTelegramHtml, formatMatchedRule } from './message';
+import { buildKeywordRuleListMessage, buildTelegramPostMessage, escapeTelegramHtml, formatMatchedRule } from './message';
 import type { KeywordSub, Post } from '../../types';
 
 const post: Post = {
@@ -29,6 +29,15 @@ describe('Telegram post message formatting', () => {
       '🔗 <a href="https://www.nodeseek.com/post-123-1">点击查看原帖 →</a>',
     );
     expect(message.text).not.toContain('<u>');
+  });
+
+  it('renders list rules as tap-to-copy Telegram code entities', () => {
+    const text = buildKeywordRuleListMessage(['HostDzire', 'esim', 'HKT AND HKBN', '<script>']);
+    expect(text).toContain('• <code>HostDzire</code>');
+    expect(text).toContain('• <code>esim</code>');
+    expect(text).toContain('• <code>HKT AND HKBN</code>');
+    expect(text).toContain('• <code>&lt;script&gt;</code>');
+    expect(text).toContain('点击规则即可复制');
   });
 
   it('shows Boolean relationships instead of internal storage encoding', () => {
